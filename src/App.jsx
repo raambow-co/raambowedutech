@@ -16,6 +16,7 @@ import LMSAuth from './components/lms/LMSAuth';
 import LMSLayout from './components/lms/LMSLayout';
 import MembershipPlans from './components/lms/MembershipPlans';
 import WelcomeScreen from './components/lms/WelcomeScreen';
+import { auth, onAuthStateChanged, signOut } from './firebase';
 
 function App() {
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -34,6 +35,25 @@ function App() {
   // Membership: null = unpaid, object = paid/active
   const [membership, setMembership] = useState(null);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true); // wait for Firebase session check
+
+  // ── Persist session: listen for Firebase auth state changes
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser && appMode === 'landing') {
+        // User is already logged in from a previous session
+        setUserProfile(prev => ({
+          ...prev,
+          name:  (firebaseUser.displayName || firebaseUser.email.split('@')[0]).toUpperCase(),
+          email: firebaseUser.email,
+          uid:   firebaseUser.uid,
+        }));
+        // Don't auto-redirect to LMS here — user chose to visit landing page
+      }
+      setAuthLoading(false);
+    });
+    return () => unsub();
+  }, []);
 
   // Conditional early returns are moved below hooks to comply with React Rules of Hooks
 
@@ -133,7 +153,8 @@ function App() {
           activeRole={activeRole}
           membership={membership}
           onRoleChange={(newRole) => setActiveRole(newRole)}
-          onLogout={() => {
+          onLogout={async () => {
+            await signOut(auth);
             setAppMode('landing');
             setActiveRole('student');
             setMembership(null);

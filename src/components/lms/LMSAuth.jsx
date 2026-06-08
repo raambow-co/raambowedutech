@@ -4,6 +4,15 @@ import {
   Mail, Lock, User, Phone, Eye, EyeOff, Sparkles,
   Trophy, ChevronRight, CheckCircle2, AlertCircle, ArrowLeft, MapPin, ArrowRight
 } from 'lucide-react';
+import {
+  auth,
+  googleProvider,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  updateProfile,
+  sendPasswordResetEmail,
+} from '../../firebase';
 import raambowLogo from '../../assets/raambowlogo.png';
 import sasiLogo from '../../assets/sasi_logo.png';
 import dpsLogo from '../../assets/dps_logo.png';
@@ -141,37 +150,117 @@ const LMSAuth = ({ onLoginSuccess, onBackToLanding }) => {
     }
   };
 
-  /* ── Submit handlers ──────────────────────────────────────── */
-  const handleLogin = (e) => {
+  /* ── Firebase error → readable message ───────────────────── */
+  const fbErr = (code) => {
+    const map = {
+      'auth/email-already-in-use':     'This email is already registered. Please sign in.',
+      'auth/invalid-email':            'Enter a valid email address.',
+      'auth/weak-password':            'Password must be at least 6 characters.',
+      'auth/user-not-found':           'No account found with this email.',
+      'auth/wrong-password':           'Incorrect password. Please try again.',
+      'auth/invalid-credential':       'Incorrect email or password.',
+      'auth/too-many-requests':        'Too many attempts. Try again in a few minutes.',
+      'auth/popup-closed-by-user':     'Google sign-in was cancelled.',
+      'auth/network-request-failed':   'Network error. Check your internet connection.',
+    };
+    return map[code] || 'Something went wrong. Please try again.';
+  };
+
+  /* ── Submit handlers (REAL Firebase) ─────────────────────── */
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     if (!email || !password) { setError('Please fill in all fields.'); return; }
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      setSuccess('Signed in successfully! Opening LMS Portal…');
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password);
       const school = selectedInstitution?.name || 'RaamBow Academy';
+      setSuccess('Signed in! Opening LMS Portal…');
       setTimeout(() => {
-        onLoginSuccess({ name: email.split('@')[0].toUpperCase(), email, phone: '+91 98765 43210', school, role: 'student', isNewUser: false });
-      }, 1400);
-    }, 1200);
+        onLoginSuccess({
+          name:      (cred.user.displayName || email.split('@')[0]).toUpperCase(),
+          email:     cred.user.email,
+          phone:     cred.user.phoneNumber || '',
+          school,
+          role:      'student',
+          isNewUser: false,
+          uid:       cred.user.uid,
+        });
+      }, 900);
+    } catch (err) {
+      setError(fbErr(err.code));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
     setError('');
     if (!fullName || !email || !password || !confirmPassword) { setError('Please fill in all required fields.'); return; }
     if (accessType === 'external' && !phone) { setError('Phone number is required.'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
+    if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      setSuccess('Account created! Opening LMS Portal…');
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      // Save display name to Firebase profile
+      await updateProfile(cred.user, { displayName: fullName });
       const school = selectedInstitution?.name || 'RaamBow Academy';
+      setSuccess('Account created! Setting up your portal…');
       setTimeout(() => {
-        onLoginSuccess({ name: fullName, email, phone: phone || '+91 99999 88888', school, role: 'student', isNewUser: true });
-      }, 1400);
-    }, 1500);
+        onLoginSuccess({
+          name:      fullName,
+          email:     cred.user.email,
+          phone:     phone || '',
+          school,
+          role:      'student',
+          isNewUser: true,
+          uid:       cred.user.uid,
+        });
+      }, 900);
+    } catch (err) {
+      setError(fbErr(err.code));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) { setError('Enter your email address first, then click Forgot Password.'); return; }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setSuccess('Password reset email sent! Check your inbox.');
+    } catch (err) {
+      setError(fbErr(err.code));
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setIsLoading(true);
+    try {
+      const cred = await signInWithPopup(auth, googleProvider);
+      const school = selectedInstitution?.name || 'RaamBow Academy';
+      setSuccess('Google sign-in successful! Opening LMS Portal…');
+      // Determine if truly new (first time) using Firebase metadata
+      const isNew = cred.user.metadata.creationTime === cred.user.metadata.lastSignInTime;
+      setTimeout(() => {
+        onLoginSuccess({
+          name:      (cred.user.displayName || cred.user.email.split('@')[0]).toUpperCase(),
+          email:     cred.user.email,
+          phone:     cred.user.phoneNumber || '',
+          school,
+          role:      'student',
+          isNewUser: isNew,
+          uid:       cred.user.uid,
+        });
+      }, 900);
+    } catch (err) {
+      setError(fbErr(err.code));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   /* ── Slide variants ───────────────────────────────────────── */
@@ -548,7 +637,7 @@ const LMSAuth = ({ onLoginSuccess, onBackToLanding }) => {
                       <div className="space-y-1 text-left">
                         <div className="flex justify-between items-center">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Password</label>
-                          <button type="button" className="text-[9px] font-extrabold text-indigo-600 hover:text-indigo-700 cursor-pointer">Forgot Password?</button>
+                          <button type="button" onClick={handleForgotPassword} className="text-[9px] font-extrabold text-indigo-600 hover:text-indigo-700 cursor-pointer">Forgot Password?</button>
                         </div>
                         <div className="relative">
                           <input type={showPassword ? 'text' : 'password'} required placeholder="••••••••" value={password}
@@ -604,14 +693,9 @@ const LMSAuth = ({ onLoginSuccess, onBackToLanding }) => {
                         <div className="grid grid-cols-2 gap-3">
                           <button
                             type="button"
-                            onClick={() => {
-                              setIsLoading(true);
-                              setTimeout(() => {
-                                setIsLoading(false);
-                                onLoginSuccess({ name: 'ADITYAA', email: 'adityaa@google.com', phone: '+91 98765 43210', school: 'RaamBow Academy', role: 'student', isNewUser: false });
-                              }, 1000);
-                            }}
-                            className="py-2 px-4 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 text-xs font-bold"
+                            onClick={handleGoogleSignIn}
+                            disabled={isLoading}
+                            className="py-2 px-4 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 text-xs font-bold disabled:opacity-50"
                           >
                             <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24"><path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l3.227-3.1C18.281 1.944 15.495 1 12.24 1 5.922 1 1 5.922 1 12.24s4.922 11.24 11.24 11.24c6.6 0 11-4.636 11-11.24 0-.755-.083-1.33-.18-1.955H12.24z" /></svg>
                             Google
