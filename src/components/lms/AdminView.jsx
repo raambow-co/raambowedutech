@@ -1,24 +1,91 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, UserCheck, BookOpen, CreditCard, Sparkles, Shield, BarChart3, 
   ArrowUpRight, Plus, HelpCircle, ChevronRight, ArrowDownRight
 } from 'lucide-react';
+import { db, collection, getDocs } from '../../firebase';
 
 const AdminView = () => {
   const [activeSubTab, setActiveSubTab] = useState('analytics');
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    inactiveUsers: 0,
+    activeSubscribers: 0,
+    totalPurchases: 0,
+    revenue: 0
+  });
+  const [students, setStudents] = useState([]);
+  const [purchases, setPurchases] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAdminData = async () => {
+      try {
+        const usersSnap = await getDocs(collection(db, 'users'));
+        const purchasesSnap = await getDocs(collection(db, 'purchases'));
+
+        const usersList = [];
+        let inactiveCount = 0;
+        let activeCount = 0;
+        usersSnap.forEach((doc) => {
+          const data = doc.data();
+          usersList.push({
+            id: doc.id,
+            name: data.name || 'Anonymous',
+            email: data.email || '',
+            school: data.school || 'RaamBow Academy',
+            planStatus: data.planStatus || 'inactive',
+            currentPlan: data.currentPlan || 'None',
+            createdAt: data.createdAt || ''
+          });
+          if (data.planStatus === 'active') {
+            activeCount++;
+          } else {
+            inactiveCount++;
+          }
+        });
+
+        const purchasesList = [];
+        let totalRev = 0;
+        purchasesSnap.forEach((doc) => {
+          const data = doc.data();
+          purchasesList.push({
+            id: doc.id,
+            uid: data.uid,
+            planName: data.planName || 'Unknown Plan',
+            amount: data.amount || 0,
+            paymentId: data.paymentId || 'N/A',
+            purchaseDate: data.purchaseDate ? new Date(data.purchaseDate).toLocaleDateString() : 'N/A',
+            status: data.status || 'active'
+          });
+          totalRev += Number(data.amount || 0);
+        });
+
+        setStats({
+          totalUsers: usersSnap.size,
+          inactiveUsers: inactiveCount,
+          activeSubscribers: activeCount,
+          totalPurchases: purchasesSnap.size,
+          revenue: totalRev
+        });
+        setStudents(usersList);
+        setPurchases(purchasesList);
+      } catch (err) {
+        console.error("Error loading admin stats: ", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAdminData();
+  }, []);
 
   const adminStats = [
-    { label: 'Active Students', value: '1,240', change: '+12%', isUp: true, icon: Users, color: 'text-indigo-600 bg-indigo-50' },
-    { label: 'Verified Instructors', value: '14', change: '+2', isUp: true, icon: UserCheck, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Total Revenue', value: '$14,240', change: '+18%', isUp: true, icon: CreditCard, color: 'text-blue-600 bg-blue-50' },
-    { label: 'AI Requests', value: '45,820', change: '+24%', isUp: true, icon: Sparkles, color: 'text-purple-600 bg-purple-50' }
-  ];
-
-  const studentList = [
-    { name: 'Adityaa Sharma', email: 'adityaa@example.com', school: 'IIT Madras', course: 'Generative AI', progress: '72%' },
-    { name: 'Siddharth Mehta', email: 'sid@example.com', school: 'Bits Pilani', course: 'Generative AI', progress: '90%' },
-    { name: 'Elena Rostova', email: 'elena@gmail.com', school: 'Stanford Univ', course: 'Python Masterclass', progress: '54%' }
+    { label: 'Total Users', value: stats.totalUsers.toString(), change: 'Registered', isUp: true, icon: Users, color: 'text-indigo-600 bg-indigo-50' },
+    { label: 'Inactive Users', value: stats.inactiveUsers.toString(), change: 'No Plan', isUp: false, icon: HelpCircle, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Active Subscribers', value: stats.activeSubscribers.toString(), change: 'Active Plan', isUp: true, icon: UserCheck, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Total Revenue', value: `₹${stats.revenue.toLocaleString('en-IN')}`, change: 'INR', isUp: true, icon: CreditCard, color: 'text-blue-600 bg-blue-50' }
   ];
 
   return (
@@ -166,34 +233,40 @@ const AdminView = () => {
             className="bg-white border border-slate-200/60 rounded-3xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.01),0_10px_20px_-5px_rgba(0,0,0,0.02)]"
           >
             <div className="divide-y divide-slate-100">
-              {studentList.map((stud, idx) => (
-                <div key={idx} className="p-4 flex items-center justify-between gap-4 text-xs font-semibold">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 font-black text-[10px]">
-                      {stud.name.substring(0, 2).toUpperCase()}
+              {students.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs">No registered students found.</div>
+              ) : (
+                students.map((stud, idx) => (
+                  <div key={idx} className="p-4 flex items-center justify-between gap-4 text-xs font-semibold">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 font-black text-[10px]">
+                        {stud.name.substring(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <span className="text-slate-800 block">{stud.name}</span>
+                        <span className="text-[10px] text-slate-400 block">{stud.email}</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-slate-800 block">{stud.name}</span>
-                      <span className="text-[10px] text-slate-400 block">{stud.email}</span>
+                    
+                    <div className="hidden sm:block">
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase">Institution</span>
+                      <span className="text-slate-600 block">{stud.school}</span>
+                    </div>
+
+                    <div className="hidden sm:block">
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase">Active Plan</span>
+                      <span className="text-slate-600 block">{stud.currentPlan}</span>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase">Status</span>
+                      <span className={`block font-bold ${stud.planStatus === 'active' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                        {stud.planStatus.toUpperCase()}
+                      </span>
                     </div>
                   </div>
-                  
-                  <div className="hidden sm:block">
-                    <span className="text-[10px] text-slate-400 block font-bold uppercase">Institution</span>
-                    <span className="text-slate-600 block">{stud.school}</span>
-                  </div>
-
-                  <div className="hidden sm:block">
-                    <span className="text-[10px] text-slate-400 block font-bold uppercase">Course Active</span>
-                    <span className="text-slate-600 block">{stud.course}</span>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="text-[10px] text-slate-400 block font-bold uppercase">Progress</span>
-                    <span className="text-indigo-600 block font-bold">{stud.progress}</span>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </motion.div>
         )}
@@ -207,32 +280,33 @@ const AdminView = () => {
             className="bg-white border border-slate-200/60 rounded-3xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.01),0_10px_20px_-5px_rgba(0,0,0,0.02)]"
           >
             <div className="divide-y divide-slate-100">
-              {[
-                { id: 'tx-102', user: 'Adityaa S.', amount: '$199', date: 'Jun 05, 2026', method: 'Razorpay UPI', status: 'completed' },
-                { id: 'tx-101', user: 'Siddharth M.', amount: '$199', date: 'Jun 04, 2026', method: 'Razorpay Card', status: 'completed' }
-              ].map((tx, idx) => (
-                <div key={idx} className="p-4 flex items-center justify-between gap-4 text-xs font-semibold">
-                  <div>
-                    <span className="text-slate-800 block">Course Enrollment Sub</span>
-                    <span className="text-[10px] text-slate-400 block font-mono">TX-ID: {tx.id} • User: {tx.user}</span>
-                  </div>
-                  
-                  <div className="hidden sm:block">
-                    <span className="text-[10px] text-slate-400 block font-bold uppercase">Method</span>
-                    <span className="text-slate-600 block">{tx.method}</span>
-                  </div>
+              {purchases.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs">No payment records found.</div>
+              ) : (
+                purchases.map((tx, idx) => (
+                  <div key={idx} className="p-4 flex items-center justify-between gap-4 text-xs font-semibold">
+                    <div>
+                      <span className="text-slate-800 block">{tx.planName}</span>
+                      <span className="text-[10px] text-slate-400 block font-mono">TX-ID: {tx.paymentId}</span>
+                    </div>
+                    
+                    <div className="hidden sm:block">
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase">Payment Gateway</span>
+                      <span className="text-slate-600 block">Razorpay API</span>
+                    </div>
 
-                  <div>
-                    <span className="text-[10px] text-slate-400 block font-bold uppercase">Date</span>
-                    <span className="text-slate-600 block">{tx.date}</span>
-                  </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase">Date</span>
+                      <span className="text-slate-600 block">{tx.purchaseDate}</span>
+                    </div>
 
-                  <div className="text-right">
-                    <span className="text-slate-800 font-bold block">{tx.amount}</span>
-                    <span className="text-emerald-600 text-[10px] font-bold block uppercase">{tx.status}</span>
+                    <div className="text-right">
+                      <span className="text-slate-800 font-bold block">₹{tx.amount}</span>
+                      <span className="text-emerald-600 text-[10px] font-bold block uppercase">{tx.status}</span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </motion.div>
         )}

@@ -16,7 +16,7 @@ import LMSAuth from './components/lms/LMSAuth';
 import LMSLayout from './components/lms/LMSLayout';
 import MembershipPlans from './components/lms/MembershipPlans';
 import WelcomeScreen from './components/lms/WelcomeScreen';
-import { auth, onAuthStateChanged, signOut } from './firebase';
+import { auth, onAuthStateChanged, signOut, db, doc, getDoc } from './firebase';
 
 function App() {
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -39,16 +39,52 @@ function App() {
 
   // ── Persist session: listen for Firebase auth state changes
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
-      if (firebaseUser && appMode === 'landing') {
-        // User is already logged in from a previous session
-        setUserProfile(prev => ({
-          ...prev,
-          name:  (firebaseUser.displayName || firebaseUser.email.split('@')[0]).toUpperCase(),
-          email: firebaseUser.email,
-          uid:   firebaseUser.uid,
-        }));
-        // Don't auto-redirect to LMS here — user chose to visit landing page
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const userRef = doc(db, 'users', firebaseUser.uid);
+          const userSnap = await getDoc(userRef);
+          let planStatus = 'inactive';
+          let currentPlan = null;
+          let dbName = firebaseUser.displayName || firebaseUser.email.split('@')[0];
+          let dbPhone = '';
+          let dbSchool = 'RaamBow Academy';
+
+          if (userSnap.exists()) {
+            const data = userSnap.data();
+            planStatus = data.planStatus || 'inactive';
+            currentPlan = data.currentPlan || null;
+            dbName = data.name || dbName;
+            dbPhone = data.phone || dbPhone;
+            dbSchool = data.school || dbSchool;
+          }
+
+          setUserProfile({
+            uid: firebaseUser.uid,
+            name: dbName.toUpperCase(),
+            email: firebaseUser.email,
+            phone: dbPhone,
+            school: dbSchool,
+            role: 'student'
+          });
+
+          if (planStatus === 'active') {
+            setMembership({
+              planId: currentPlan,
+              planName: currentPlan === 'starter' ? 'LMS Starter' : (currentPlan === 'pro' ? 'LMS Pro' : currentPlan),
+              courses: ['Generative AI Fundamentals', 'Python Programming Masterclass'],
+              validUntil: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+              activatedAt: new Date().toISOString(),
+              justActivated: false,
+            });
+          } else {
+            setMembership(null);
+          }
+        } catch (err) {
+          console.error("Error fetching user data on auth change: ", err);
+        }
+      } else {
+        setMembership(null);
       }
       setAuthLoading(false);
     });
@@ -189,23 +225,21 @@ function App() {
         onLoginSuccess={(profile) => {
           setUserProfile(profile);
           setActiveRole(profile.role || 'student');
-          // New user (registered) → go to Plans; returning user (login) → check membership
-          if (profile.isNewUser) {
-            setMembership(null);
-            setAppMode('plans');
-          } else {
-            // Returning user: simulate having a membership (demo)
-            const demo = {
-              planId: 'pro',
-              planName: 'LMS Pro',
+          if (profile.planStatus === 'active') {
+            const membershipObj = {
+              planId: profile.currentPlan,
+              planName: profile.currentPlan === 'starter' ? 'LMS Starter' : (profile.currentPlan === 'pro' ? 'LMS Pro' : profile.currentPlan),
               courses: ['Generative AI Fundamentals', 'Python Programming Masterclass'],
               validUntil: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
               activatedAt: new Date().toISOString(),
               justActivated: false,
             };
-            setMembership(demo);
+            setMembership(membershipObj);
             setShowWelcome(false);
             setAppMode('lms');
+          } else {
+            setMembership(null);
+            setAppMode('plans');
           }
         }}
         onBackToLanding={() => setAppMode('landing')}
@@ -219,7 +253,17 @@ function App() {
       <BackgroundEffects />
 
       {/* 2. Glassmorphic Navigation Bar */}
-      <Navbar onOpenAuth={() => setAppMode('auth')} />
+      <Navbar onOpenAuth={() => {
+        if (auth.currentUser) {
+          if (membership) {
+            setAppMode('lms');
+          } else {
+            setAppMode('plans');
+          }
+        } else {
+          setAppMode('auth');
+        }
+      }} />
 
       {/* 3. Hero Section Container */}
       <main id="home" className="flex-grow flex flex-col items-center justify-center pt-28 md:pt-32 pb-16 z-10 px-6 md:px-12 max-w-7xl mx-auto w-full overflow-hidden">

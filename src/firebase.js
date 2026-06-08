@@ -19,6 +19,19 @@ import {
   onAuthStateChanged,
   sendPasswordResetEmail,
 } from 'firebase/auth';
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  collection,
+  addDoc,
+  getDocs,
+  query,
+  where,
+  serverTimestamp
+} from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDaD8WD-vov26-mRWjWi0cFriVOEEN3sWY",
@@ -32,11 +45,13 @@ const firebaseConfig = {
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db   = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 export {
   auth,
+  db,
   googleProvider,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -45,4 +60,14 @@ export {
   updateProfile,
   onAuthStateChanged,
   sendPasswordResetEmail,
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  collection,
+  addDoc,
+  getDocs,
+  query,
+  where,
+  serverTimestamp
 };

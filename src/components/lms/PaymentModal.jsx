@@ -6,6 +6,7 @@ import {
   Building2, Wallet, RefreshCw, ArrowLeft
 } from 'lucide-react';
 import raambowLogo from '../../assets/raambowlogo.png';
+import { db, collection, addDoc, doc, updateDoc } from '../../firebase';
 
 /* ─── helpers ─────────────────────────────────────────────────── */
 const GST_RATE = 0.18;
@@ -87,12 +88,46 @@ const PaymentModal = ({ plan, user, onClose, onSuccess }) => {
     return true;
   };
 
+  const savePurchaseToFirestore = async () => {
+    try {
+      const now = new Date();
+      let expiryDate = new Date(now);
+      if (plan.id === 'starter') expiryDate.setMonth(expiryDate.getMonth() + 6);
+      else if (plan.id === 'pro') expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+      else expiryDate.setMonth(expiryDate.getMonth() + 3);
+
+      const paymentId = 'pay_' + Math.random().toString(36).substring(2, 11).toUpperCase();
+
+      await addDoc(collection(db, 'purchases'), {
+        uid: user.uid || 'guest',
+        planName: plan.name,
+        amount: total,
+        paymentId: paymentId,
+        purchaseDate: now.toISOString(),
+        expiryDate: expiryDate.toISOString(),
+        status: 'active'
+      });
+
+      if (user?.uid) {
+        await updateDoc(doc(db, 'users', user.uid), {
+          planStatus: 'active',
+          currentPlan: plan.id
+        });
+      }
+    } catch (err) {
+      console.error("Error writing purchase details to Firestore: ", err);
+    }
+  };
+
   const pay = () => {
     setError('');
     if (!validate()) return;
     setLoading(true);
     setTimeout(() => { setLoading(false); setStep('processing'); }, 400);
-    setTimeout(() => setStep('success'), 2800);
+    setTimeout(async () => {
+      await savePurchaseToFirestore();
+      setStep('success');
+    }, 2800);
   };
 
   // success auto-dismiss handled by user clicking CTA

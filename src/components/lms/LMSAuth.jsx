@@ -175,16 +175,48 @@ const LMSAuth = ({ onLoginSuccess, onBackToLanding }) => {
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);
       const school = selectedInstitution?.name || 'RaamBow Academy';
+      
+      const userRef = doc(db, 'users', cred.user.uid);
+      const userSnap = await getDoc(userRef);
+      let planStatus = 'inactive';
+      let currentPlan = null;
+      let dbName = cred.user.displayName || email.split('@')[0];
+      let dbPhone = cred.user.phoneNumber || '';
+      let dbSchool = school;
+
+      if (userSnap.exists()) {
+        const data = userSnap.data();
+        planStatus = data.planStatus || 'inactive';
+        currentPlan = data.currentPlan || null;
+        dbName = data.name || dbName;
+        dbPhone = data.phone || dbPhone;
+        dbSchool = data.school || dbSchool;
+      } else {
+        await setDoc(userRef, {
+          uid: cred.user.uid,
+          name: dbName,
+          email: cred.user.email,
+          createdAt: new Date().toISOString(),
+          planStatus: 'inactive',
+          currentPlan: null,
+          phone: dbPhone,
+          school: dbSchool,
+          role: 'student'
+        });
+      }
+
       setSuccess('Signed in! Opening LMS Portal…');
       setTimeout(() => {
         onLoginSuccess({
-          name:      (cred.user.displayName || email.split('@')[0]).toUpperCase(),
+          name:      dbName.toUpperCase(),
           email:     cred.user.email,
-          phone:     cred.user.phoneNumber || '',
-          school,
+          phone:     dbPhone,
+          school:    dbSchool,
           role:      'student',
           isNewUser: false,
           uid:       cred.user.uid,
+          planStatus,
+          currentPlan
         });
       }, 900);
     } catch (err) {
@@ -204,9 +236,21 @@ const LMSAuth = ({ onLoginSuccess, onBackToLanding }) => {
     setIsLoading(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
-      // Save display name to Firebase profile
       await updateProfile(cred.user, { displayName: fullName });
       const school = selectedInstitution?.name || 'RaamBow Academy';
+      
+      await setDoc(doc(db, 'users', cred.user.uid), {
+        uid: cred.user.uid,
+        name: fullName,
+        email: cred.user.email,
+        createdAt: new Date().toISOString(),
+        planStatus: 'inactive',
+        currentPlan: null,
+        phone: phone || '',
+        school,
+        role: 'student'
+      });
+
       setSuccess('Account created! Setting up your portal…');
       setTimeout(() => {
         onLoginSuccess({
@@ -217,6 +261,8 @@ const LMSAuth = ({ onLoginSuccess, onBackToLanding }) => {
           role:      'student',
           isNewUser: true,
           uid:       cred.user.uid,
+          planStatus: 'inactive',
+          currentPlan: null
         });
       }, 900);
     } catch (err) {
@@ -242,18 +288,51 @@ const LMSAuth = ({ onLoginSuccess, onBackToLanding }) => {
     try {
       const cred = await signInWithPopup(auth, googleProvider);
       const school = selectedInstitution?.name || 'RaamBow Academy';
+      
+      const userRef = doc(db, 'users', cred.user.uid);
+      const userSnap = await getDoc(userRef);
+      let planStatus = 'inactive';
+      let currentPlan = null;
+      let isNew = false;
+      let dbName = cred.user.displayName || cred.user.email.split('@')[0];
+      let dbPhone = cred.user.phoneNumber || '';
+      let dbSchool = school;
+
+      if (!userSnap.exists()) {
+        isNew = true;
+        await setDoc(userRef, {
+          uid: cred.user.uid,
+          name: dbName,
+          email: cred.user.email,
+          createdAt: new Date().toISOString(),
+          planStatus: 'inactive',
+          currentPlan: null,
+          phone: dbPhone,
+          school: dbSchool,
+          role: 'student'
+        });
+      } else {
+        const data = userSnap.data();
+        planStatus = data.planStatus || 'inactive';
+        currentPlan = data.currentPlan || null;
+        dbName = data.name || dbName;
+        dbPhone = data.phone || dbPhone;
+        dbSchool = data.school || dbSchool;
+        isNew = planStatus !== 'active';
+      }
+
       setSuccess('Google sign-in successful! Opening LMS Portal…');
-      // Determine if truly new (first time) using Firebase metadata
-      const isNew = cred.user.metadata.creationTime === cred.user.metadata.lastSignInTime;
       setTimeout(() => {
         onLoginSuccess({
-          name:      (cred.user.displayName || cred.user.email.split('@')[0]).toUpperCase(),
+          name:      dbName.toUpperCase(),
           email:     cred.user.email,
-          phone:     cred.user.phoneNumber || '',
-          school,
+          phone:     dbPhone,
+          school:    dbSchool,
           role:      'student',
           isNewUser: isNew,
           uid:       cred.user.uid,
+          planStatus,
+          currentPlan
         });
       }, 900);
     } catch (err) {
